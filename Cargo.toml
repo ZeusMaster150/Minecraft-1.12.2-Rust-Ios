@@ -67,9 +67,8 @@ panic = "abort"
 [build-dependencies]
 shaderc = "=0.8.3"
 
-[target.'cfg(not(target_os = "ios"))'.dependencies]
 
-[target.'cfg(not(target_os = "ios"))'.dependencies]
+
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 gl = "0.14"
