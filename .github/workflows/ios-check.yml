@@ -19,5 +19,6 @@ jobs:
       - name: Run cargo check for iOS
         env:
           IPHONEOS_DEPLOYMENT_TARGET: "12.0"
+          CMAKE_POLICY_VERSION_MINIMUM: "3.5"
         run: |
           cargo check --target aarch64-apple-ios
