@@ -178,7 +178,7 @@ impl GameSettings {
             "renderDistance",
             settings.renderDistanceChunks,
         )
-        .clamp(2, 32);
+        .clamp(2, if cfg!(target_os = "ios") { 4 } else { 32 });
         settings.viewBobbing = read_bool(&options, "bobView", settings.viewBobbing);
         settings.clouds = read_clouds(&options, settings.clouds);
         settings.fancyGraphics = read_bool(&options, "fancyGraphics", settings.fancyGraphics);
@@ -491,14 +491,14 @@ impl Default for GameSettings {
         Self {
             mouseSensitivity: 0.5,
             invertMouse: false,
-            renderDistanceChunks: 8,
+            renderDistanceChunks: if cfg!(target_os = "ios") { 2 } else { 8 },
             viewBobbing: true,
             anaglyph: false,
             fboEnable: true,
-            limitFramerate: FRAMERATE_LIMIT_MAX,
-            clouds: 2,
-            fancyGraphics: true,
-            ambientOcclusion: 2,
+            limitFramerate: if cfg!(target_os = "ios") { 60 } else { FRAMERATE_LIMIT_MAX },
+            clouds: if cfg!(target_os = "ios") { 0 } else { 2 },
+            fancyGraphics: !cfg!(target_os = "ios"),
+            ambientOcclusion: if cfg!(target_os = "ios") { 0 } else { 2 },
             chatVisibility: EnumChatVisibility::Full,
             chatColours: true,
             chatLinks: true,
@@ -514,11 +514,11 @@ impl Default for GameSettings {
             enableVsync: false,
             useVbo: true,
             pauseOnLostFocus: true,
-            mipmapLevels: 4,
-            entityShadows: true,
+            mipmapLevels: if cfg!(target_os = "ios") { 0 } else { 4 },
+            entityShadows: !cfg!(target_os = "ios"),
             attackIndicator: 1,
             autoJump: true,
-            touchscreen: false,
+            touchscreen: cfg!(target_os = "ios"),
             keyBindings: vanilla_key_bindings(),
             showSubtitles: false,
             showDebugInfo: false,

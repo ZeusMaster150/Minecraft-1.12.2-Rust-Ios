@@ -135,6 +135,16 @@ where
             access_token,
             user_type,
         } => {
+            #[cfg(target_os = "ios")]
+            let (gameDir, assets, fullscreen) = {
+                let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_owned());
+                let docs = PathBuf::from(home).join("Documents");
+                let _ = std::fs::create_dir_all(&docs);
+                let ios_assets = docs.join("assets");
+                let _ = std::fs::create_dir_all(&ios_assets);
+                (docs, ios_assets, true)
+            };
+            #[cfg(not(target_os = "ios"))]
             let gameDir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             let resourcePacksDir = gameDir.join("resourcepacks");
             let millis = SystemTime::now()

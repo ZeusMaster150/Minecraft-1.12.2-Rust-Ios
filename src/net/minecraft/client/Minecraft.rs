@@ -6884,6 +6884,36 @@ impl ApplicationHandler for MinecraftApplication {
         }
         self.applyRuntimeMouseFocusRequest();
         let mut fatalError = None;
+        let event = match event {
+            WindowEvent::Touch(touch) => {
+                use winit::event::{DeviceId, TouchPhase};
+                match touch.phase {
+                    TouchPhase::Started => {
+                        if let (Some(renderer), Some(runtime)) = (self.renderer.as_ref(), self.mainMenu.as_mut()) {
+                            runtime.mousePosition = touch.location;
+                            runtime.mouseInsideWindow = true;
+                            let extent = renderer.extent();
+                            let _ = runtime.mouseDragged(extent.width, extent.height);
+                        }
+                        WindowEvent::MouseInput {
+                            device_id: touch.device_id,
+                            state: ElementState::Pressed,
+                            button: MouseButton::Left,
+                        }
+                    }
+                    TouchPhase::Moved => WindowEvent::CursorMoved {
+                        device_id: touch.device_id,
+                        position: touch.location,
+                    },
+                    TouchPhase::Ended | TouchPhase::Cancelled => WindowEvent::MouseInput {
+                        device_id: touch.device_id,
+                        state: ElementState::Released,
+                        button: MouseButton::Left,
+                    },
+                }
+            }
+            other => other,
+        };
         match event {
             WindowEvent::CloseRequested => eventLoop.exit(),
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {

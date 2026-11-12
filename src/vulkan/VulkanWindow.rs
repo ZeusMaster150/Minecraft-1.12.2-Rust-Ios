@@ -105,6 +105,18 @@ impl VulkanWindow {
 
         let requiredExtensions = ash_window::enumerate_required_extensions(displayHandle)
             .context("the windowing backend did not expose required Vulkan extensions")?;
+        #[cfg(target_os = "ios")]
+        let mut extensionPtrs: Vec<*const std::os::raw::c_char> = requiredExtensions.to_vec();
+        #[cfg(target_os = "ios")]
+        {
+            extensionPtrs.push(ash::khr::portability_enumeration::NAME.as_ptr());
+        }
+        #[cfg(target_os = "ios")]
+        let instanceCreateInfo = vk::InstanceCreateInfo::default()
+            .flags(vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR)
+            .application_info(&applicationInfo)
+            .enabled_extension_names(&extensionPtrs);
+        #[cfg(not(target_os = "ios"))]
         let instanceCreateInfo = vk::InstanceCreateInfo::default()
             .application_info(&applicationInfo)
             .enabled_extension_names(requiredExtensions);
@@ -151,6 +163,11 @@ impl VulkanWindow {
                     .queue_priorities(&priorities)
             })
             .collect::<Vec<_>>();
+        #[cfg(target_os = "ios")]
+        let portabilitySubsetName = CString::new("VK_KHR_portability_subset").expect("static CString");
+        #[cfg(target_os = "ios")]
+        let deviceExtensions = [khr::swapchain::NAME.as_ptr(), portabilitySubsetName.as_ptr()];
+        #[cfg(not(target_os = "ios"))]
         let deviceExtensions = [khr::swapchain::NAME.as_ptr()];
         let enabledFeatures = vk::PhysicalDeviceFeatures::default()
             .wide_lines(wideLinesEnabled)

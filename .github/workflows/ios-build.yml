@@ -1,0 +1,110 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust for iOS ARM64
+        run: |
+          rustup target add aarch64-apple-ios
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Download MoltenVK for iOS
+        run: |
+          mkdir -p vendor
+          curl -L -o vendor/MoltenVK-macos.tar https://github.com/KhronosGroup/MoltenVK/releases/download/v1.2.11/MoltenVK-all.tar
+          tar -xf vendor/MoltenVK-macos.tar -C vendor
+          find vendor -name "MoltenVK.xcframework" -maxdepth 4
+
+      - name: Build Release Binary for iOS ARM64
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: "12.0"
+          CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+        run: |
+          MVK_DIR=$(find "$PWD/vendor" -path "*/MoltenVK.xcframework/ios-arm64" | head -n 1)
+          echo "Using MoltenVK at: $MVK_DIR"
+          export RUSTFLAGS="-L framework=$MVK_DIR -C link-arg=-F$MVK_DIR -C link-arg=-framework -C link-arg=MoltenVK -C link-arg=-Wl,-rpath,@executable_path/Frameworks"
+          cargo build --release --target aarch64-apple-ios --bin mc112-client
+
+      - name: Package Unsigned IPA
+        run: |
+          APP_DIR="build_ipa/Payload/Minecraft.app"
+          mkdir -p "$APP_DIR/Frameworks"
+          cp target/aarch64-apple-ios/release/mc112-client "$APP_DIR/Minecraft"
+          chmod +x "$APP_DIR/Minecraft"
+
+          MVK_FW=$(find "$PWD/vendor" -path "*/MoltenVK.xcframework/ios-arm64/MoltenVK.framework" | head -n 1)
+          cp -R "$MVK_FW" "$APP_DIR/Frameworks/"
+
+          cat << 'PLIST' > "$APP_DIR/Info.plist"
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key>
+            <string>Minecraft</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.zeusmaster.mc112rust</string>
+            <key>CFBundleName</key>
+            <string>Minecraft 1.12.2</string>
+            <key>CFBundleDisplayName</key>
+            <string>Minecraft 1.12.2</string>
+            <key>CFBundleVersion</key>
+            <string>1.0</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.12.2</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>LSRequiresIPhoneOS</key>
+            <true/>
+            <key>MinimumOSVersion</key>
+            <string>12.0</string>
+            <key>UIDeviceFamily</key>
+            <array>
+              <integer>1</integer>
+              <integer>2</integer>
+            </array>
+            <key>UIRequiredDeviceCapabilities</key>
+            <array>
+              <string>arm64</string>
+              <string>metal</string>
+            </array>
+            <key>UISupportedInterfaceOrientations</key>
+            <array>
+              <string>UIInterfaceOrientationLandscapeLeft</string>
+              <string>UIInterfaceOrientationLandscapeRight</string>
+            </array>
+            <key>UIRequiresFullScreen</key>
+            <true/>
+            <key>UIStatusBarHidden</key>
+            <true/>
+            <key>UIFileSharingEnabled</key>
+            <true/>
+            <key>LSSupportsOpeningDocumentsInPlace</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+
+          cd build_ipa
+          zip -r ../Minecraft-1.12.2-iOS.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Minecraft-1.12.2-iOS-IPA
+          path: Minecraft-1.12.2-iOS.ipa
