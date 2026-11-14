@@ -29,7 +29,12 @@ env:
 
 jobs:
   build-ipa:
-    runs-on: macos-14
+    # macos-latest is the only macOS label this account can actually acquire:
+    # macos-14 resolves to `macos-14-arm64-us-default` ("configuration is not
+    # supported"), macos-13 is retired (job waits 24h then cancels) and
+    # macos-15 is never acquired by a hosted runner. macos-latest has run
+    # successfully on this repository before.
+    runs-on: macos-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

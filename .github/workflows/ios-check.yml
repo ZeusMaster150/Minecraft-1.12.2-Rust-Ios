@@ -19,7 +19,8 @@ env:
 
 jobs:
   check:
-    runs-on: macos-14
+    # See ios-build.yml: macos-latest is the only label this account can acquire.
+    runs-on: macos-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
