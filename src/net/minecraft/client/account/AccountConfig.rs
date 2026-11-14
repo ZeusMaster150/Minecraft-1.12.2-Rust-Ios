@@ -76,7 +76,26 @@ impl AccountConfig {
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         let temporary = self.path.with_extension("json.tmp");
         fs::write(&temporary, bytes)?;
-        replace_with_rollback(&temporary, &self.path)
+        // The file holds Microsoft refresh tokens, which are long-lived account
+        // credentials. Keep it readable by this user only.
+        restrict_permissions(&temporary)?;
+        replace_with_rollback(&temporary, &self.path)?;
+        restrict_permissions(&self.path)
+    }
+}
+
+/// Refresh tokens in `account.json` must not be world-readable. On iOS the file
+/// additionally inherits the app sandbox, so other apps cannot reach it at all.
+fn restrict_permissions(path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        Ok(())
     }
 }
 

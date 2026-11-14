@@ -70,10 +70,16 @@ jobs:
           # dlopens it by absolute path (src/vulkan/VulkanEntry.rs), but the
           # rpath keeps the framework usable if it is ever linked dynamically.
           RUSTFLAGS: "-C link-arg=-Wl,-rpath,@executable_path/Frameworks"
+          # Optional: bakes the owner's Azure application (client) id into the
+          # binary for Microsoft sign-in. Set it as a repository *variable*
+          # (Settings -> Secrets and variables -> Actions -> Variables), not a
+          # secret: a public client id is not a credential. Empty = the app
+          # falls back to Documents/config/ms-client-id.txt at runtime.
+          MC112_MS_CLIENT_ID: ${{ vars.MC112_MS_CLIENT_ID }}
         run: |
           cargo build --release --target aarch64-apple-ios --bin mc112-client
 
-      - name: Package unsigned IPA
+      - name: Package app bundle
         run: |
           set -euo pipefail
           APP_DIR="build_ipa/Payload/Minecraft.app"
@@ -108,17 +114,60 @@ jobs:
             exit 1
           fi
 
+      - name: Embed MoltenVK license and notices
+        run: |
+          set -euo pipefail
+          APP_DIR="build_ipa/Payload/Minecraft.app"
+          mkdir -p "$APP_DIR/THIRD_PARTY_NOTICES"
+          cp platform/ios/THIRD_PARTY_NOTICES.txt "$APP_DIR/THIRD_PARTY_NOTICES/README.txt"
+          MVK_LICENSE=$(find vendor -type f -name "LICENSE" -path "*MoltenVK*" | head -n 1)
+          if [ -n "$MVK_LICENSE" ]; then
+            cp "$MVK_LICENSE" "$APP_DIR/THIRD_PARTY_NOTICES/MoltenVK-LICENSE.txt"
+          else
+            # Apache-2.0 requires shipping the license text; fetch the canonical
+            # copy rather than failing the build over archive layout changes.
+            curl -L --retry 3 --fail -o "$APP_DIR/THIRD_PARTY_NOTICES/MoltenVK-LICENSE.txt" \
+              https://www.apache.org/licenses/LICENSE-2.0.txt
+          fi
+
+      - name: Fakesign the bundle for Filza / AppSync
+        run: |
+          set -euo pipefail
+          # An unsigned binary is rejected by Filza with
+          # "application is missing the application-identifier entitlement".
+          # `ldid -S<plist>` adds a self-signed signature plus the entitlements
+          # iOS requires (application-identifier, keychain-access-groups).
+          # Sideloadly/AltStore re-sign the bundle anyway, so one artifact works
+          # for both jailbroken installs and Apple-ID sideloading.
+          brew install ldid
+          APP_DIR="build_ipa/Payload/Minecraft.app"
+          ldid -S"platform/ios/entitlements.plist" "$APP_DIR/Minecraft"
+          FRAMEWORK_BIN="$APP_DIR/Frameworks/MoltenVK.framework/MoltenVK"
+          if [ -f "$FRAMEWORK_BIN" ]; then
+            ldid -S "$FRAMEWORK_BIN"
+          fi
+          DYLIB="$APP_DIR/Frameworks/libMoltenVK.dylib"
+          if [ -f "$DYLIB" ]; then
+            ldid -S "$DYLIB"
+          fi
+          echo "--- entitlements embedded in the executable ---"
+          ldid -e "$APP_DIR/Minecraft"
+
+      - name: Verify and package IPA
+        run: |
+          set -euo pipefail
+          APP_DIR="build_ipa/Payload/Minecraft.app"
+
           # Verify the Mach-O target really is an iOS arm64 GUI app.
           file "$APP_DIR/Minecraft"
           xcrun vtool -show-build "$APP_DIR/Minecraft" || true
 
-          # Unsigned IPA: Sideloadly/AltStore re-sign it with the user's Apple ID.
-          (cd build_ipa && zip -qry ../Minecraft-1.12.2-iOS-unsigned.ipa Payload)
-          ls -lh Minecraft-1.12.2-iOS-unsigned.ipa
+          (cd build_ipa && zip -qry ../Minecraft-1.12.2-iOS.ipa Payload)
+          ls -lh Minecraft-1.12.2-iOS.ipa
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Minecraft-1.12.2-iOS-unsigned
-          path: Minecraft-1.12.2-iOS-unsigned.ipa
+          name: Minecraft-1.12.2-iOS
+          path: Minecraft-1.12.2-iOS.ipa
           if-no-files-found: error

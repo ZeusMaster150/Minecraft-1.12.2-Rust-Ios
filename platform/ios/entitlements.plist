@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for a self-signed ("fakesigned") build.
+
+  Filza + AppSync Unified refuse to install an app whose binary has no
+  signature / no `application-identifier`, which is what an unsigned CI build
+  produces ("application is missing the application-identifier entitlement").
+
+  The bundle identifier here must stay in sync with CFBundleIdentifier in
+  Info.plist. `keychain-access-groups` is what allows the account manager to
+  keep Microsoft refresh tokens in the iOS Keychain instead of account.json.
+-->
+<plist version="1.0">
+<dict>
+	<key>application-identifier</key>
+	<string>com.zeusmaster.mc112rust</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>MC112RUST</string>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>com.zeusmaster.mc112rust</string>
+	</array>
+	<key>get-task-allow</key>
+	<true/>
+</dict>
+</plist>

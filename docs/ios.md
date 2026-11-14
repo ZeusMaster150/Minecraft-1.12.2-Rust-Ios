@@ -25,11 +25,20 @@ GitHub Actions is the only supported build host: the app must be linked against
 the iPhoneOS SDK, which requires macOS + Xcode.
 
 1. Push to `main` (or run **Actions → Build iOS IPA → Run workflow**).
-2. When the run finishes, download the `Minecraft-1.12.2-iOS-unsigned` artifact.
-   It contains `Minecraft-1.12.2-iOS-unsigned.ipa`.
+2. When the run finishes, download the `Minecraft-1.12.2-iOS` artifact.
+   It contains `Minecraft-1.12.2-iOS.ipa`.
 
-The IPA is **unsigned**. iOS refuses to install unsigned binaries, so it has to
-be signed by you.
+The workflow packages the `.app`, adds the bundled licenses
+(`THIRD_PARTY_NOTICES/`), then *fakesigns* the executable and the MoltenVK
+framework with `ldid -S platform/ios/entitlements.plist`. That adds the
+`application-identifier` and `keychain-access-groups` entitlements iOS needs, so
+the same IPA works both on a jailbroken device (Filza / `ipainstaller`) and with
+Sideloadly, which replaces the signature with your own Apple ID anyway.
+
+Microsoft sign-in needs an Azure application (client) id; see
+[`accounts.md`](accounts.md). You can bake it into the build by adding the
+repository variable `MC112_MS_CLIENT_ID`, or drop
+`Documents/config/ms-client-id.txt` into the installed app later.
 
 ## 2. Sign and install
 
@@ -45,8 +54,12 @@ be signed by you.
 ### Jailbroken iPhone 6
 
 `checkra1n` supports the iPhone 6 on iOS 12.5.8. With AppSync Unified installed,
-the unsigned IPA can be installed directly (Filza / `ipainstaller`), with no
-7-day expiry.
+the IPA can be installed directly in Filza or with `ipainstaller`.
+
+If Filza reports **"application is missing the application-identifier
+entitlement"** you installed a build from before the `ldid` step existed (or
+AppSync Unified is missing). Install the current artifact, and check that
+AppSync Unified is enabled for the iOS version in use.
 
 ## 3. Install the Minecraft 1.12.2 assets
 
@@ -57,13 +70,25 @@ The repository does not ship Mojang assets, and the iOS build cannot use
 Documents/assets/minecraft/...
 ```
 
-1. On a PC, run `Import-Assets-OneClick.cmd` once so `runtime/assets` exists.
-2. Connect the device and open the app's Documents folder:
-   * macOS 10.15+: Finder → iPhone → Files → Minecraft 1.12.2;
-   * Windows: iTunes → device → File Sharing → Minecraft 1.12.2.
-3. Copy the **contents** of `runtime/assets` (`minecraft/` and friends) into
-   `Documents/assets/`.
-4. Sanity check: `Documents/assets/minecraft/lang/en_us.lang` must exist.
+Get the files in one of two ways:
+
+* **From a PC that owns the game:** run `Import-Assets-OneClick.cmd` once so
+  `runtime/assets` exists.
+* **Without a PC:** `python3 tools/download-assets.py --zip assets.zip` rebuilds
+  the official 1.12.2 tree from Mojang's public CDN (see the script header), on
+  any machine with Python 3, including Termux.
+
+Then copy them into the app:
+
+1. Connect the device and open the app's Documents folder:
+   * macOS 10.15+: Finder → iPhone → Files → MC 1.12.2 Rust;
+   * Windows: iTunes → device → File Sharing → MC 1.12.2 Rust;
+   * iPhone-only: an app that can unzip (Documents by Readdle) plus the Files
+     app, or the Wi-Fi route in `accounts.md`'s sibling notes.
+2. Copy the **contents** of `runtime/assets` (`minecraft/` and friends) into
+   `Documents/assets/` (for a ZIP, `assets.zip` contains an `assets/` folder:
+   unzip it and keep `minecraft/`).
+3. Sanity check: `Documents/assets/minecraft/lang/en_us.lang` must exist.
 
 If assets are missing, the client logs the exact expected path to
 `Documents/latest.log` and exits; the same file holds renderer/network logs.
@@ -91,6 +116,8 @@ These are real gaps, not packaging problems:
 | App closes immediately after launch | `Documents/latest.log`, look for "failed to load MoltenVK" or the asset path message |
 | Black screen, no log file | the IPA signature is invalid, or `Frameworks/MoltenVK.framework` was not embedded |
 | Letterboxed 320×480 window | `LaunchScreen.storyboardc` missing from the `.app` |
+| "missing the application-identifier entitlement" (Filza) | build predates the `ldid` step, or AppSync Unified is not enabled |
+| Microsoft sign-in says no application id | add `Documents/config/ms-client-id.txt`, see `accounts.md` |
 | "Minecraft 1.12.2 needs to be updated" | `MinimumOSVersion` in `platform/ios/Info.plist` |
 | `failed to load MoltenVK` | verify `Payload/Minecraft.app/Frameworks/MoltenVK.framework/MoltenVK` |
 

@@ -11,9 +11,9 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Minecraft</string>
+	<string>MC112Rust</string>
 	<key>CFBundleDisplayName</key>
-	<string>Minecraft 1.12.2</string>
+	<string>MC 1.12.2 Rust</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

@@ -1,11 +1,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 
 use crate::net::minecraft::client::account::Account::{current_time_millis, Account};
 use crate::net::minecraft::client::account::AccountConfig::AccountConfig;
-use crate::net::minecraft::client::account::MicrosoftAuth::{interactive_login, MicrosoftLogin};
+use crate::net::minecraft::client::account::MicrosoftAuth::{MicrosoftAuthError, MicrosoftLogin};
+use crate::net::minecraft::client::account::MicrosoftDeviceCode;
 use crate::net::minecraft::client::gui::FontRenderer::FontRenderer;
 use crate::net::minecraft::client::gui::GuiButton::{GuiButton, GuiSoundCommand};
 use crate::net::minecraft::client::gui::GuiScreen::GuiScreen;
@@ -42,7 +43,7 @@ impl GuiMicrosoftAuth {
     pub fn new() -> Self {
         Self {
             GuiScreen: GuiScreen::default(),
-            status: "§fCheck your browser to continue...§r".to_owned(),
+            status: "§fStarting Microsoft sign-in...§r".to_owned(),
             cause: None,
             receiver: None,
             finishedSession: None,
@@ -71,7 +72,7 @@ impl GuiMicrosoftAuth {
                     if relay.send(AuthEvent::Status(status)).is_err() { break; }
                 }
             });
-            let result = interactive_login(Some(&uiSender), Some(cancelled.as_ref()));
+            let result = attempt_login(Some(&uiSender), Some(cancelled.as_ref()));
             drop(uiSender);
             let _ = relayThread.join();
             match result {
@@ -123,7 +124,18 @@ impl GuiMicrosoftAuth {
     pub fn drawScreen(&mut self, drawList: &mut GuiDrawList, font: &mut FontRenderer, mouseX: i32, mouseY: i32, partialTicks: f32) {
         self.GuiScreen.drawDefaultBackground(drawList);
         self.GuiScreen.Gui.drawCenteredString(font, drawList, "Microsoft Authentication", self.GuiScreen.width / 2, self.GuiScreen.height / 2 - 22, 11_184_810);
-        self.GuiScreen.Gui.drawCenteredString(font, drawList, &self.status, self.GuiScreen.width / 2, self.GuiScreen.height / 2 - 4, -1);
+        // Status strings may contain a newline so the device code and the URL
+        // stay readable on a narrow phone screen.
+        for (index, line) in self.status.split('\n').enumerate() {
+            self.GuiScreen.Gui.drawCenteredString(
+                font,
+                drawList,
+                line,
+                self.GuiScreen.width / 2,
+                self.GuiScreen.height / 2 - 4 + index as i32 * (font.font_height + 2),
+                -1,
+            );
+        }
         if let Some(cause) = &self.cause {
             let width = font.get_string_width(cause);
             drawList.draw_rect(0, self.GuiScreen.height - font.font_height - 5, width + 6, self.GuiScreen.height, 0x6400_0000_u32 as i32);
@@ -149,4 +161,18 @@ impl Drop for GuiMicrosoftAuth {
     fn drop(&mut self) {
         self.cancelled.store(true, Ordering::Release);
     }
+}
+
+/// Starts the official Microsoft device code sign-in (RFC 8628).
+///
+/// The launcher never opens an embedded browser, never listens on `localhost`
+/// and never asks for a password: the player types a short code on
+/// microsoft.com/link, and the client polls Microsoft for the token. This is the
+/// only flow that works while an iOS app is in the foreground, and it does not
+/// borrow another launcher's Azure client id.
+fn attempt_login(
+    status: Option<&Sender<String>>,
+    cancelled: Option<&AtomicBool>,
+) -> Result<MicrosoftLogin, MicrosoftAuthError> {
+    MicrosoftDeviceCode::login(status, cancelled)
 }

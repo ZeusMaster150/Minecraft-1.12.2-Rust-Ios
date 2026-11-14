@@ -1,7 +1,3 @@
-use std::sync::mpsc::{self, Receiver};
-use std::thread;
-
-use crate::net::minecraft::client::account::MicrosoftAuth::login_with_credentials;
 use crate::net::minecraft::client::gui::FontRenderer::FontRenderer;
 use crate::net::minecraft::client::gui::GuiButton::{GuiButton, GuiSoundCommand};
 use crate::net::minecraft::client::gui::GuiScreen::GuiScreen;
@@ -24,25 +20,21 @@ pub struct GuiAltCrackedInteraction {
     pub sound: Option<GuiSoundCommand>,
 }
 
-#[derive(Debug)]
-enum AltLoginEvent {
-    Status(String),
-    Success(Session),
-    Failure,
-}
-
-/// Rust-equivalent port of Exhibition's `GuiAltCracked` and
-/// `AltLoginThread`. A blank password creates an offline session. A non-empty
-/// password runs the same external-openauth credential flow locally and never
-/// writes the password to disk.
+/// Local (offline) profile selection.
+///
+/// This screen only ever creates a local session: it asks for a player name and
+/// nothing else. There is deliberately no password field and no credential
+/// exchange here. Server-side login only works for servers that run in
+/// `online-mode=false`; official servers reject offline sessions, and sending a
+/// Microsoft password to a third-party login form would violate the Microsoft
+/// services agreement (and is exactly what this screen used to do). Real Microsoft
+/// accounts sign in through `GuiMicrosoftAuth`, which uses the official device
+/// code flow.
 #[derive(Debug)]
 pub struct GuiAltCracked {
     pub GuiScreen: GuiScreen,
     username: GuiTextField,
-    password: GuiTextField,
     status: String,
-    receiver: Option<Receiver<AltLoginEvent>>,
-    completedSession: Option<Session>,
 }
 
 impl GuiAltCracked {
@@ -50,10 +42,7 @@ impl GuiAltCracked {
         Self {
             GuiScreen: GuiScreen::default(),
             username: GuiTextField::new(0, 0, 0, 200, 20),
-            password: GuiTextField::new(1, 0, 0, 200, 20),
-            status: "§7Idle...".to_owned(),
-            receiver: None,
-            completedSession: None,
+            status: "§7Local profile - no password needed§r".to_owned(),
         }
     }
 
@@ -64,43 +53,18 @@ impl GuiAltCracked {
         let y = height / 4 + 24;
         self.GuiScreen
             .buttonList
-            .push(GuiButton::new(0, width / 2 - 100, y + 84, "Login"));
+            .push(GuiButton::new(0, width / 2 - 100, y + 84, "Log In"));
         self.GuiScreen
             .buttonList
             .push(GuiButton::new(1, width / 2 - 100, y + 108, "Back"));
-        self.username = GuiTextField::new(0, width / 2 - 100, 60, 200, 20);
-        self.password = GuiTextField::new(1, width / 2 - 100, 100, 200, 20);
+        self.username = GuiTextField::new(0, width / 2 - 100, 100, 200, 20);
+        self.username.setMaxStringLength(16);
         self.username.setFocused(true);
-        self.password.setMaxStringLength(256);
-        self.password.setMaskCharacter(Some('*'));
-        self.updateButton();
     }
 
     pub fn updateScreen(&mut self) -> Option<Session> {
         self.username.updateCursorCounter();
-        self.password.updateCursorCounter();
-        let mut clear = false;
-        if let Some(receiver) = &self.receiver {
-            while let Ok(event) = receiver.try_recv() {
-                match event {
-                    AltLoginEvent::Status(status) => self.status = status,
-                    AltLoginEvent::Success(session) => {
-                        self.status = format!("§aLogged in as {}", session.getUsername());
-                        self.completedSession = Some(session);
-                        clear = true;
-                    }
-                    AltLoginEvent::Failure => {
-                        self.status = "§cLogin failed!".to_owned();
-                        clear = true;
-                    }
-                }
-            }
-        }
-        if clear {
-            self.receiver = None;
-            self.updateButton();
-        }
-        self.completedSession.take()
+        None
     }
 
     pub fn drawScreen(
@@ -113,11 +77,10 @@ impl GuiAltCracked {
     ) {
         self.GuiScreen.drawDefaultBackground(drawList);
         self.username.drawTextBox(drawList, font);
-        self.password.drawTextBox(drawList, font);
         self.GuiScreen.Gui.drawCenteredString(
             font,
             drawList,
-            "Alt Login",
+            "Local Profile",
             self.GuiScreen.width / 2,
             20,
             -1,
@@ -127,24 +90,14 @@ impl GuiAltCracked {
             drawList,
             &self.status,
             self.GuiScreen.width / 2,
-            29,
+            32,
             -1,
         );
         if self.username.getText().is_empty() {
             self.GuiScreen.Gui.drawString(
                 font,
                 drawList,
-                "Username / E-Mail",
-                self.GuiScreen.width / 2 - 96,
-                66,
-                -7_829_368,
-            );
-        }
-        if self.password.getText().is_empty() {
-            self.GuiScreen.Gui.drawString(
-                font,
-                drawList,
-                "Password",
+                "Player name (3-16 of a-z, 0-9, _)",
                 self.GuiScreen.width / 2 - 96,
                 106,
                 -7_829_368,
@@ -162,8 +115,6 @@ impl GuiAltCracked {
         font: &FontRenderer,
     ) -> Option<GuiAltCrackedInteraction> {
         self.username
-            .mouseClicked(mouseX, mouseY, mouseButton, font);
-        self.password
             .mouseClicked(mouseX, mouseY, mouseButton, font);
         if mouseButton != 0 {
             return None;
@@ -186,17 +137,11 @@ impl GuiAltCracked {
     }
 
     pub fn typedText(&mut self, text: &str, font: &FontRenderer) -> bool {
-        let changed = if self.username.isFocused() {
+        if self.username.isFocused() {
             self.username.writeText(text, Some(font))
-        } else if self.password.isFocused() {
-            self.password.writeText(text, Some(font))
         } else {
             false
-        };
-        if changed {
-            self.updateButton();
         }
-        changed
     }
 
     pub fn keyPressed(
@@ -205,116 +150,84 @@ impl GuiAltCracked {
         modifiers: GuiTextFieldModifiers,
         font: &FontRenderer,
     ) -> bool {
-        let changed = if self.username.isFocused() {
+        if self.username.isFocused() {
             self.username.keyPressed(key, modifiers, font)
-        } else if self.password.isFocused() {
-            self.password.keyPressed(key, modifiers, font)
         } else {
             false
-        };
-        if changed {
-            self.updateButton();
         }
-        changed
     }
 
     pub fn selectAll(&mut self, font: &FontRenderer) {
         if self.username.isFocused() {
             self.username.selectAll(font);
-        } else if self.password.isFocused() {
-            self.password.selectAll(font);
         }
     }
 
     pub fn tabPressed(&mut self) {
-        let usernameFocused = self.username.isFocused();
-        self.username.setFocused(!usernameFocused);
-        self.password.setFocused(usernameFocused);
+        // Only one input field remains, so keep the caret in it.
+        self.username.setFocused(true);
     }
 
     pub fn enterPressed(&mut self) -> GuiAltCrackedAction {
         self.login()
     }
 
+    /// Normalises the entered name to the character set Minecraft accepts for
+    /// offline play. Invalid characters are dropped rather than rejected so a
+    /// mobile keyboard cannot produce an unusable profile.
+    fn normalise_name(raw: &str) -> String {
+        raw.chars()
+            .filter(|character| character.is_ascii_alphanumeric() || *character == '_')
+            .take(16)
+            .collect()
+    }
+
     fn login(&mut self) -> GuiAltCrackedAction {
-        if self.receiver.is_some() {
+        let username = Self::normalise_name(&self.username.getText());
+        if username.is_empty() {
+            self.status = "§cEnter a player name§r".to_owned();
             return GuiAltCrackedAction::None;
         }
-        let username = self.username.getText().to_owned();
-        let password = self.password.getText();
-        if password.is_empty() {
-            let session = Session::new(username.clone(), "", "", "mojang");
-            self.status = format!("§aLogged in. ({username} - offline name)");
-            return GuiAltCrackedAction::Authenticated(session);
-        }
-
-        self.status = "§7Waiting...".to_owned();
-        let (sender, receiver) = mpsc::channel();
-        let statusSender = sender.clone();
-        let _ = thread::Builder::new()
-            .name("Alt Login Thread".to_owned())
-            .spawn(move || {
-                let (uiSender, uiReceiver) = mpsc::channel::<String>();
-                let relay = sender.clone();
-                let relayThread = thread::spawn(move || {
-                    while let Ok(status) = uiReceiver.recv() {
-                        if relay.send(AltLoginEvent::Status(status)).is_err() {
-                            break;
-                        }
-                    }
-                });
-                let result = login_with_credentials(&username, &password, Some(&uiSender));
-                drop(uiSender);
-                let _ = relayThread.join();
-                match result {
-                    Ok(login) => {
-                        let _ = statusSender.send(AltLoginEvent::Success(login.session));
-                    }
-                    Err(_) => {
-                        let _ = statusSender.send(AltLoginEvent::Failure);
-                    }
-                }
-            });
-        self.receiver = Some(receiver);
-        self.updateButton();
-        GuiAltCrackedAction::None
-    }
-
-    fn updateButton(&mut self) {
-        let enabled = self.receiver.is_none();
-        if let Some(button) = self
-            .GuiScreen
-            .buttonList
-            .iter_mut()
-            .find(|button| button.id == 0)
-        {
-            button.enabled = enabled;
-        }
+        let session = Session::new(username.clone(), "", "", "mojang");
+        self.status = format!("§aSelected profile: {username}§r");
+        GuiAltCrackedAction::Authenticated(session)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn empty_username_remains_loginable_like_exhibition() {
+    fn empty_username_is_rejected_instead_of_creating_a_blank_profile() {
         let mut screen = GuiAltCracked::new();
         screen.initGui(854, 480);
-        let login = screen.GuiScreen.buttonList.iter().find(|button| button.id == 0).unwrap();
-        assert!(login.enabled);
-        assert_eq!(screen.enterPressed(), GuiAltCrackedAction::Authenticated(Session::new("", "", "", "mojang")));
+        assert_eq!(screen.enterPressed(), GuiAltCrackedAction::None);
     }
 
     #[test]
-    fn tab_toggles_between_username_and_password() {
+    fn entered_name_becomes_an_offline_session() {
         let mut screen = GuiAltCracked::new();
         screen.initGui(854, 480);
-        assert!(screen.username.isFocused());
-        screen.tabPressed();
-        assert!(screen.password.isFocused());
-        screen.tabPressed();
-        assert!(screen.username.isFocused());
+        let name = "Steve_01";
+        screen.username = GuiTextField::new(0, 0, 0, 200, 20);
+        screen.username.setText(name);
+        match screen.enterPressed() {
+            GuiAltCrackedAction::Authenticated(session) => {
+                assert_eq!(session.getUsername(), name);
+                assert!(session.getToken().is_empty());
+            }
+            other => panic!("unexpected action: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn invalid_characters_are_removed() {
+        assert_eq!(GuiAltCracked::normalise_name("St eve! #1"), "Steve1");
+    }
+
+    #[test]
+    fn name_is_capped_at_sixteen_characters() {
+        assert_eq!(GuiAltCracked::normalise_name(&"a".repeat(40)).len(), 16);
     }
 }

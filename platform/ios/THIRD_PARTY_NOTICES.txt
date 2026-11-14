@@ -1,0 +1,39 @@
+MC 1.12.2 Rust — third-party notices
+====================================
+
+This application is an independent reimplementation of the Minecraft Java
+Edition 1.12.2 client protocol and rendering behaviour. It is not affiliated
+with, endorsed by, or sponsored by Mojang Studios or Microsoft.
+
+It contains NO Mojang code and NO Mojang assets. Textures, sounds, models,
+language files and fonts are NOT bundled: they must be supplied by the user
+from their own legitimate Minecraft installation. "Minecraft" is a trademark of
+Mojang Studios; it is used here only to describe compatibility.
+
+-------------------------------------------------------------------------------
+MoltenVK (bundled as Frameworks/MoltenVK.framework)
+-------------------------------------------------------------------------------
+Copyright (c) 2015-2024 The Brenwill Workshop Ltd.
+
+Licensed under the Apache License, Version 2.0. The full license text is
+included next to this file as MoltenVK-LICENSE.txt.
+
+MoltenVK translates the Vulkan API to Apple Metal. It is required because iOS
+provides no Vulkan driver. MoltenVK is unmodified.
+
+-------------------------------------------------------------------------------
+Rust crates
+-------------------------------------------------------------------------------
+This binary statically links third-party Rust crates (winit, ash, ash-window,
+raw-window-handle, ureq, rustls/ring, serde, image/png, zip, flate2, rayon and
+others), each under its own license (MIT, Apache-2.0, ISC, BSD, MPL-2.0,
+Unicode-3.0 or Zlib). Exact versions are pinned in Cargo.lock in the project
+repository; the corresponding license texts are distributed with the sources of
+those crates.
+
+-------------------------------------------------------------------------------
+glslangValidator (build time only, not distributed)
+-------------------------------------------------------------------------------
+Vulkan SPIR-V in src/vulkan/shaders/spv is produced at development time from
+this project's own GLSL by glslangValidator (BSD-3-Clause, Khronos Group). No
+part of glslang is linked into the application.
