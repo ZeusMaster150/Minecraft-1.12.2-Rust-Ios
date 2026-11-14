@@ -9,6 +9,7 @@
 #[path = "SwapchainPolicy.rs"] pub mod SwapchainPolicy;
 #[path = "TextureSource.rs"] pub mod TextureSource;
 #[path = "VulkanBackend.rs"] pub mod VulkanBackend;
+#[path = "VulkanEntry.rs"] pub mod VulkanEntry;
 #[path = "VulkanGuiPipeline.rs"] pub mod VulkanGuiPipeline;
 #[path = "VulkanWindow.rs"] pub mod VulkanWindow;
 #[path = "VulkanWorldRenderer.rs"] pub mod VulkanWorldRenderer;

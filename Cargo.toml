@@ -30,7 +30,6 @@ rsa = "0.9"
 ureq = { version = "2.12", features = ["json", "cookies"] }
 url = "2.5"
 anyhow = "1.0"
-ash = { version = "0.38", default-features = false, features = ["linked", "debug"] }
 ash-window = "0.13"
 bitflags = "2.6"
 byteorder = "1.5"
@@ -64,13 +63,20 @@ lto = "thin"
 codegen-units = 1
 panic = "abort"
 
-[build-dependencies]
-shaderc = "=0.8.3"
-
-
-
+# Vulkan entry point differs per platform.
+#
+# Desktop platforms link the system Vulkan loader (`linked`). iOS has no system
+# Vulkan loader at all: `MoltenVK.framework` is bundled in the .app and must be
+# dlopen-ed at runtime (`loaded`).
+#
+# Shaders are precompiled to SPIR-V in `src/vulkan/shaders/spv` for every
+# platform, so no shaderc/C++ toolchain is needed for any target (including
+# cross-compilation) — see `tools/compile-shaders.sh`.
+[target.'cfg(target_os = "ios")'.dependencies]
+ash = { version = "0.38", default-features = false, features = ["loaded", "debug"] }
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
+ash = { version = "0.38", default-features = false, features = ["linked", "debug"] }
 gl = "0.14"
 glutin = "0.32.3"
 glutin-winit = "0.5.0"

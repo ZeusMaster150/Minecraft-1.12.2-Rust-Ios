@@ -153,7 +153,7 @@ runtime/assets/
 ├─ Import-Assets-OneClick.cmd     # Windows 一键资源导入入口
 ├─ Build-And-Run.cmd              # Windows Release 构建和运行入口
 ├─ Cargo.toml
-├─ build.rs                       # 构建时编译 Vulkan GLSL 为 SPIR-V
+├─ build.rs                       # 构建时复制预编译 Vulkan SPIR-V 并检查是否过期
 ├─ rust-toolchain.toml
 ├─ LICENSE
 └─ README.md
@@ -169,6 +169,12 @@ runtime/assets/
 
 其他操作系统可能可以编译部分代码，但当前公开基线主要在 Windows 上开发和验证。
 
+### iOS（iPhone 6 / iOS 12.5.8）
+
+仓库包含 iOS arm64 移植：`MoltenVK.framework` 运行时加载、提交预编译 SPIR-V（不再依赖 `shaderc`）、`Documents/assets` 资源目录、`Documents/latest.log` 日志以及 UIKit 启动入口。构建只能通过 GitHub Actions 的 macOS 运行器完成，产物是未签名的 IPA。完整步骤、Sideloadly 签名、资源导入和当前限制见 [docs/ios.md](docs/ios.md)。
+
+注意：iOS 端目前只编译 Vulkan（MoltenVK）后端；触控已映射为鼠标事件，但还没有屏幕摇杆与按键，因此单人移动仍需后续补 `GameSettings` 键位驱动的虚拟按键。
+
 ### 构建工具
 
 建议安装：
@@ -182,7 +188,7 @@ runtime/assets/
 
 仓库中的 `rust-toolchain.toml` 会选择 stable Rust，并安装 `rustfmt` 与 `clippy`。`Cargo.toml` 声明的最低 Rust 版本为 1.77，但公开构建建议直接使用当前 stable 工具链。
 
-`shaderc` 构建依赖会在编译期间构建着色器编译组件，因此第一次编译通常明显慢于后续增量编译。
+现在着色器改为提交预编译 SPIR-V，`shaderc` 已完全移除，任何平台的构建都不再需要 C++ 着色器工具链；修改 `src/vulkan/shaders/*.vert|frag` 后运行 `tools/compile-shaders.sh` 重新生成 `src/vulkan/shaders/spv`。
 
 ## 快速开始
 

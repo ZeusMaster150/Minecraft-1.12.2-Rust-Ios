@@ -1,5 +1,18 @@
 name: Build iOS IPA
 
+# Produces an unsigned arm64 IPA that can be sideloaded on iOS 12+ devices
+# (Sideloadly / AltStore) or installed on a jailbroken iPhone 6.
+#
+# Why this is more than "cargo build --target aarch64-apple-ios":
+#   * iOS has no Vulkan loader, so MoltenVK.framework must be bundled into the
+#     .app and loaded at runtime by src/vulkan/VulkanEntry.rs.
+#   * MoltenVK >= 1.2.8 raised its minimum to iOS 13, so iPhone 6 (iOS 12.5.8)
+#     needs MoltenVK 1.2.7, whose deployment target is iOS 12.0.
+#   * shaderc is gone: all platforms consume the checked-in SPIR-V in
+#     src/vulkan/shaders/spv, so no C++ shader toolchain is cross-compiled.
+#   * UIKit needs an executable named exactly like CFBundleExecutable plus a
+#     compiled launch storyboard, otherwise iOS letterboxes the window.
+
 on:
   workflow_dispatch:
   push:
@@ -9,102 +22,98 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  MOLTENVK_VERSION: "1.2.7"
+  IPHONEOS_DEPLOYMENT_TARGET: "12.0"
+  CARGO_TERM_COLOR: always
+
 jobs:
   build-ipa:
-    runs-on: macos-13
+    runs-on: macos-14
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Rust for iOS ARM64
+      - name: Show toolchain versions
         run: |
-          rustup target add aarch64-apple-ios
+          rustc --version
+          cargo --version
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
 
-      - name: Rust Cache
+      - name: Add Rust iOS target
+        run: rustup target add aarch64-apple-ios
+
+      - name: Rust cache
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ios-arm64
 
-      - name: Download MoltenVK for iOS
+      - name: Download MoltenVK ${{ env.MOLTENVK_VERSION }}
         run: |
           mkdir -p vendor
-          curl -L -o vendor/MoltenVK-macos.tar https://github.com/KhronosGroup/MoltenVK/releases/download/v1.2.11/MoltenVK-all.tar
-          tar -xf vendor/MoltenVK-macos.tar -C vendor
-          find vendor -name "MoltenVK.xcframework" -maxdepth 4
+          curl -L --retry 5 --fail \
+            -o vendor/MoltenVK-ios.tar \
+            "https://github.com/KhronosGroup/MoltenVK/releases/download/v${MOLTENVK_VERSION}/MoltenVK-ios.tar"
+          tar -xf vendor/MoltenVK-ios.tar -C vendor
+          echo "--- bundled MoltenVK artifacts ---"
+          find vendor -name "MoltenVK.framework" -o -name "libMoltenVK.dylib" -o -name "libMoltenVK.a"
 
-      - name: Build Release Binary for iOS ARM64
+      - name: Build release client for aarch64-apple-ios
         env:
-          IPHONEOS_DEPLOYMENT_TARGET: "12.0"
-          CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+          # MoltenVK.framework declares an @rpath install name; the client also
+          # dlopens it by absolute path (src/vulkan/VulkanEntry.rs), but the
+          # rpath keeps the framework usable if it is ever linked dynamically.
+          RUSTFLAGS: "-C link-arg=-Wl,-rpath,@executable_path/Frameworks"
         run: |
-          MVK_DIR=$(find "$PWD/vendor" -path "*/MoltenVK.xcframework/ios-arm64" | head -n 1)
-          echo "Using MoltenVK at: $MVK_DIR"
-          export RUSTFLAGS="-L framework=$MVK_DIR -C link-arg=-F$MVK_DIR -C link-arg=-framework -C link-arg=MoltenVK -C link-arg=-Wl,-rpath,@executable_path/Frameworks"
           cargo build --release --target aarch64-apple-ios --bin mc112-client
 
-      - name: Package Unsigned IPA
+      - name: Package unsigned IPA
         run: |
+          set -euo pipefail
           APP_DIR="build_ipa/Payload/Minecraft.app"
+          rm -rf build_ipa
           mkdir -p "$APP_DIR/Frameworks"
+
           cp target/aarch64-apple-ios/release/mc112-client "$APP_DIR/Minecraft"
           chmod +x "$APP_DIR/Minecraft"
 
-          MVK_FW=$(find "$PWD/vendor" -path "*/MoltenVK.xcframework/ios-arm64/MoltenVK.framework" | head -n 1)
-          cp -R "$MVK_FW" "$APP_DIR/Frameworks/"
+          cp platform/ios/Info.plist "$APP_DIR/Info.plist"
+          printf 'APPL????' > "$APP_DIR/PkgInfo"
 
-          cat << 'PLIST' > "$APP_DIR/Info.plist"
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleExecutable</key>
-            <string>Minecraft</string>
-            <key>CFBundleIdentifier</key>
-            <string>com.zeusmaster.mc112rust</string>
-            <key>CFBundleName</key>
-            <string>Minecraft 1.12.2</string>
-            <key>CFBundleDisplayName</key>
-            <string>Minecraft 1.12.2</string>
-            <key>CFBundleVersion</key>
-            <string>1.0</string>
-            <key>CFBundleShortVersionString</key>
-            <string>1.12.2</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>LSRequiresIPhoneOS</key>
-            <true/>
-            <key>MinimumOSVersion</key>
-            <string>12.0</string>
-            <key>UIDeviceFamily</key>
-            <array>
-              <integer>1</integer>
-              <integer>2</integer>
-            </array>
-            <key>UIRequiredDeviceCapabilities</key>
-            <array>
-              <string>arm64</string>
-              <string>metal</string>
-            </array>
-            <key>UISupportedInterfaceOrientations</key>
-            <array>
-              <string>UIInterfaceOrientationLandscapeLeft</string>
-              <string>UIInterfaceOrientationLandscapeRight</string>
-            </array>
-            <key>UIRequiresFullScreen</key>
-            <true/>
-            <key>UIStatusBarHidden</key>
-            <true/>
-            <key>UIFileSharingEnabled</key>
-            <true/>
-            <key>LSSupportsOpeningDocumentsInPlace</key>
-            <true/>
-          </dict>
-          </plist>
-          PLIST
+          # Compiled launch storyboard: required for full-screen rendering on
+          # iPhone 6 instead of a 320x480 letterboxed window.
+          xcrun ibtool --compile "$APP_DIR/LaunchScreen.storyboardc" \
+            platform/ios/LaunchScreen.storyboard
 
-          cd build_ipa
-          zip -r ../Minecraft-1.12.2-iOS.ipa Payload
+          FRAMEWORK_DIR=$(find vendor -type d -path "*MoltenVK.xcframework/ios-arm64/MoltenVK.framework" | head -n 1)
+          DYLIB_PATH=$(find vendor -type f -name "libMoltenVK.dylib" -path "*iOS*" | head -n 1)
+          if [ -z "$DYLIB_PATH" ]; then
+            DYLIB_PATH=$(find vendor -type f -name "libMoltenVK.dylib" | head -n 1)
+          fi
 
-      - name: Upload IPA Artifact
+          if [ -n "$FRAMEWORK_DIR" ]; then
+            echo "Embedding $FRAMEWORK_DIR"
+            cp -R "$FRAMEWORK_DIR" "$APP_DIR/Frameworks/"
+          elif [ -n "$DYLIB_PATH" ]; then
+            echo "Embedding $DYLIB_PATH"
+            cp "$DYLIB_PATH" "$APP_DIR/Frameworks/libMoltenVK.dylib"
+          else
+            echo "::error::No MoltenVK binary found in the release archive"
+            exit 1
+          fi
+
+          # Verify the Mach-O target really is an iOS arm64 GUI app.
+          file "$APP_DIR/Minecraft"
+          xcrun vtool -show-build "$APP_DIR/Minecraft" || true
+
+          # Unsigned IPA: Sideloadly/AltStore re-sign it with the user's Apple ID.
+          (cd build_ipa && zip -qry ../Minecraft-1.12.2-iOS-unsigned.ipa Payload)
+          ls -lh Minecraft-1.12.2-iOS-unsigned.ipa
+
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Minecraft-1.12.2-iOS-IPA
-          path: Minecraft-1.12.2-iOS.ipa
+          name: Minecraft-1.12.2-iOS-unsigned
+          path: Minecraft-1.12.2-iOS-unsigned.ipa
+          if-no-files-found: error

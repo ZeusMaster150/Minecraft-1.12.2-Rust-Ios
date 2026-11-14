@@ -140,8 +140,21 @@ where
                 let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_owned());
                 let docs = PathBuf::from(home).join("Documents");
                 let _ = std::fs::create_dir_all(&docs);
+                // The iOS sandbox has no `runtime/assets`; imported 1.12.2
+                // resources are copied into Documents through file sharing.
                 let ios_assets = docs.join("assets");
                 let _ = std::fs::create_dir_all(&ios_assets);
+                let expected = ios_assets.join("minecraft").join("lang").join("en_us.lang");
+                if !expected.is_file() {
+                    log::error!(
+                        "Minecraft 1.12.2 assets are missing: expected {} — copy the imported \
+                         `assets` folder (with its `minecraft` subfolder) into the app's \
+                         Documents directory over Finder/iTunes file sharing",
+                        expected.display()
+                    );
+                } else {
+                    log::info!("using 1.12.2 assets from {}", ios_assets.display());
+                }
                 (docs, ios_assets, true)
             };
             #[cfg(not(target_os = "ios"))]

@@ -84,7 +84,8 @@ pub struct VulkanWindow {
 
 impl VulkanWindow {
     pub fn new(window: &Window, gameSettings: &GameSettings) -> anyhow::Result<Self> {
-        let entry = Entry::linked();
+        let entry = crate::vulkan::VulkanEntry::create()
+            .context("failed to obtain the Vulkan entry point")?;
         let displayHandle = window
             .display_handle()
             .context("failed to obtain the native display handle")?

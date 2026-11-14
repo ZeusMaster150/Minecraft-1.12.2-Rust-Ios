@@ -12,6 +12,8 @@ pub enum VulkanBackendError {
     NoPhysicalDevice,
     #[error("failed to create Vulkan logical device: {0:?}")]
     Device(vk::Result),
+    #[error("failed to obtain the Vulkan entry point: {0}")]
+    Entry(String),
 }
 
 pub struct VulkanBackend {
@@ -27,7 +29,8 @@ impl VulkanBackend {
     /// creation are intentionally separate because the client window lifecycle
     /// is driven by Winit 0.30's application handler.
     pub fn probe(settings: &VulkanBackendSettings) -> Result<Self, VulkanBackendError> {
-        let entry = Entry::linked();
+        let entry = crate::vulkan::VulkanEntry::create()
+            .map_err(|error| VulkanBackendError::Entry(error.to_string()))?;
         let application_name = CString::new("Minecraft 1.12.2 Rust Client").expect("static string");
         let engine_name = CString::new("MC112 Vulkan Compatibility Renderer").expect("static string");
         let application_info = vk::ApplicationInfo::default()
